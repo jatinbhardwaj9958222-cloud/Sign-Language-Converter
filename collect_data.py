@@ -6,14 +6,11 @@ import csv
 import os
 
 # --- 1. SETUP THE CSV FILE ---
-# This creates a file called 'hand_data.csv' to store our math
 csv_file = 'hand_data.csv'
 
-# If the file doesn't exist, we create it and add the column headers
 if not os.path.exists(csv_file):
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
-        # First column is the 'Letter', the next 63 are the x,y,z coords for 21 joints
         headers = ['Letter'] + [f'v_{i}' for i in range(1, 64)]
         writer.writerow(headers)
 
@@ -22,12 +19,18 @@ base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
 options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
 detector = vision.HandLandmarker.create_from_options(options)
 
-# --- 3. START WEBCAM ---
+# --- 3. AUTO-COLLECTION VARIABLES (NEW) ---
+# Change this number to collect more or less data per letter!
+TARGET_FRAMES = 50
+
+is_recording = False
+recording_letter = ""
+frame_counter = 0
+
+# --- 4. START WEBCAM ---
 cap = cv2.VideoCapture(0)
-print("--- DATA COLLECTION MODE ---")
-print("Hold up a sign (like 'A' or 'B').")
-print("Press 'a' on your keyboard to save that frame as the letter A.")
-print("Press 'b' to save as B, etc. Press 'q' to quit.")
+print("--- TURBO DATA COLLECTION MODE ---")
+print(f"Press any key (A-Z) to automatically record {TARGET_FRAMES} frames for that letter.")
 
 while cap.isOpened():
     success, frame = cap.read()
@@ -38,35 +41,50 @@ while cap.isOpened():
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
     detection_result = detector.detect(mp_image)
 
-    # Draw a green box in the corner to show the camera is running
-    cv2.putText(frame, 'Ready to record...', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    cv2.imshow('Data Collection', frame)
-
-    # --- 4. RECORD THE DATA ---
+    # --- 5. THE RECORDING LOGIC ---
     key = cv2.waitKey(1) & 0xFF
-    
     if key == ord('q'):
         break
-    
-    # If a hand is on screen AND you press a letter key (a-z)
-    elif detection_result.hand_landmarks and ord('a') <= key <= ord('z'):
-        hand_landmarks = detection_result.hand_landmarks[0]
         
-        # Convert the pressed key into an uppercase string (e.g., 'a' -> 'A')
-        letter_pressed = chr(key).upper()
-        
-        # Extract the x, y, and z coordinates for all 21 joints
-        row_data = [letter_pressed]
-        for landmark in hand_landmarks:
-            row_data.extend([landmark.x, landmark.y, landmark.z])
+    # TRIGGER: If we aren't recording, and you press a letter key (A-Z)
+    elif not is_recording and ord('a') <= key <= ord('z'):
+        is_recording = True
+        recording_letter = chr(key).upper()
+        frame_counter = 0
+        print(f"Started auto-recording for '{recording_letter}'...")
+
+    # ACTION: If recording is active AND a hand is visible
+    if is_recording:
+        if detection_result.hand_landmarks:
+            hand_landmarks = detection_result.hand_landmarks[0]
             
-        # Save the row to our CSV file
-        with open(csv_file, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(row_data)
+            # Save the data to CSV
+            row_data = [recording_letter]
+            for landmark in hand_landmarks:
+                row_data.extend([landmark.x, landmark.y, landmark.z])
+                
+            with open(csv_file, mode='a', newline='') as f:
+                csv.writer(f).writerow(row_data)
+                
+            frame_counter += 1
             
-        print(f"Saved 1 example for letter: {letter_pressed}")
+            # Draw a Red progress tracker on the screen
+            cv2.putText(frame, f'Recording {recording_letter}: {frame_counter}/{TARGET_FRAMES}', 
+                        (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+            # Stop recording when we hit the target
+            if frame_counter >= TARGET_FRAMES:
+                is_recording = False
+                print(f"Successfully saved {TARGET_FRAMES} examples for '{recording_letter}'!")
+        else:
+            # Pause if the hand leaves the frame
+            cv2.putText(frame, 'Show Hand to Record!', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
+    else:
+        # Draw a Green standby message
+        cv2.putText(frame, 'Press A-Z to start burst record', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+    cv2.imshow('Turbo Data Collection', frame)
 
 cap.release()
 cv2.destroyAllWindows()
