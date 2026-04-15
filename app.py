@@ -71,7 +71,7 @@ while cap.isOpened():
         current_prediction = "Waiting for hand..."
 
     # <--- NEW: Draw the full word being built lower on the screen
-    cv2.putText(frame, f'Word: {current_word}', (20, 100),
+    cv2.putText(frame, f': {current_word}', (20, 100),
                 cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 0), 3, cv2.LINE_AA)
 
     cv2.imshow('Sign Language Live Converter', frame)
